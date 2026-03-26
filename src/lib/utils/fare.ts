@@ -5,18 +5,16 @@ import type { VehicleType } from '@/types';
  * Used for fare estimation without a Maps API call.
  */
 export function haversineDistance(
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number }
 ): number {
   const R = 6371;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const x =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
 function toRad(deg: number): number {
@@ -33,7 +31,7 @@ export interface FareRateInput {
  * Calculate fare given distance and rate.
  * Returns rounded 2-decimal numeric (store as numeric in DB).
  */
-export function calculateFare(distanceKm: number, rate: FareRateInput): number {
-  const raw = rate.base_fare + distanceKm * rate.price_per_km;
+export function calculateFare(distanceKm: number, pricePerKm: number, baseFare = 0): number {
+  const raw = baseFare + distanceKm * pricePerKm;
   return Math.round(raw * 100) / 100;
 }
