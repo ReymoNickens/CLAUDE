@@ -63,15 +63,20 @@ This is the most critical module. See full spec below.
 
 **Fare & commission:**
 - `fare = distance_km × rate_per_km` (rates set per vehicle type in admin)
-- Platform commission: 10% per completed ride — tracked informational only (cash payment now; MoMo in v2)
-- Driver earnings = 90% of fare, tracked in `driver_earnings` table
-- `payment_method` column present from day one for MoMo migration
+- Platform commission: always 10% of `fare_amount`
+- **Cash rides:** driver collects full fare from student, then owes the platform 10%.
+  This debt accumulates in `drivers.commission_owed` and is cleared when the driver
+  settles with the platform (admin marks it paid via the commission ledger).
+- **MoMo rides (v2):** 10% deducted automatically at transaction time; driver receives 90% net.
+- `payment_method` column on `rides` is present from day one (`'cash'` | `'momo'`) so
+  MoMo integration requires no schema migration.
 
 **Admin panel covers:**
 - Approve/suspend drivers
 - View all rides (completed / cancelled / in-progress)
 - Set fare rates per km for cars and pragyas separately
-- View platform commission totals
+- View platform commission totals (cash owed vs. MoMo settled)
+- Per-driver commission debt view — record cash settlements, clear balance
 - Manage all user types
 - View and remove flagged newsfeed content
 
@@ -251,7 +256,19 @@ create table drivers (
   location_updated_at timestamptz,
   rating          numeric(3,2) default 5.0,
   total_trips     int default 0,
-  total_earnings  numeric(12,2) default 0
+  total_earnings  numeric(12,2) default 0,   -- cumulative gross (before commission)
+  commission_owed numeric(12,2) default 0    -- running cash commission debt owed to platform
+);
+
+-- Commission settlement ledger (cash rides only)
+-- Each row = one settlement event: driver pays admin some/all of their debt
+create table commission_payments (
+  id           uuid primary key default gen_random_uuid(),
+  driver_id    uuid references drivers(id) on delete cascade,
+  amount       numeric(10,2) not null,        -- amount settled in this payment
+  recorded_by  uuid references profiles(id),  -- admin who recorded it
+  note         text,
+  created_at   timestamptz default now()
 );
 
 -- Newsfeed posts
@@ -484,10 +501,13 @@ UCC brand colour: `#003087` (dark blue). Accent: `#FFD700` (gold).
 1. A driver cannot go online until their `drivers.status = 'approved'`
 2. A ride cannot be matched to an offline driver (`drivers.is_online = false`)
 3. Commission is always exactly 10% of `fare_amount`, stored at time of completion
-4. A user can only leave one review per service (`unique` constraint)
-5. Post likes are idempotent — like/unlike toggle, never double-count
-6. Accommodation photos array must have length ≤ 5 (enforce client + DB check)
-7. Verified badge (`is_verified`) can only be set by admin role via admin panel
+4. On cash ride completion: `drivers.commission_owed += commission_amount` atomically
+5. On MoMo ride completion (v2): commission deducted at payment time; `commission_owed` unchanged
+6. Admin records a `commission_payments` row to settle driver debt; trigger decrements `commission_owed`
+7. A user can only leave one review per service (`unique` constraint)
+8. Post likes are idempotent — like/unlike toggle, never double-count
+9. Accommodation photos array must have length ≤ 5 (enforce client + DB check)
+10. Verified badge (`is_verified`) can only be set by admin role via admin panel
 
 ---
 
