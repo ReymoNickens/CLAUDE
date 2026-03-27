@@ -26,9 +26,14 @@ export async function middleware(request: NextRequest) {
   );
 
   // Refresh session — must await, do not remove.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data.user;
+  } catch {
+    // Supabase not configured — allow all requests through
+    return supabaseResponse;
+  }
 
   const { pathname } = request.nextUrl;
 
